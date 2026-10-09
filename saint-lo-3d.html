@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Saint-Lô – carte 3D</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.123.1/Build/Cesium/Widgets/widgets.css">
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.123.1/Build/Cesium/Cesium.js"></script>
+<style>
+  :root {
+    --sl-dark: #1c2229;
+    --sl-footer: #a8c8d8;
+    --sl-accent: #1a7a8a;
+    --sl-text: #1a1a1a;
+    --sl-muted: #5a6a72;
+    --sl-border: #d0d8dc;
+    --sl-bg: #f4f6f7;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: var(--sl-text); }
+  #cesiumContainer { width:100%; height:100%; position:absolute; top:0; left:0; }
+
+  /* Bandeau supérieur façon site Saint-Lô */
+  #sl-header {
+    position:absolute; top:0; left:0; right:0; height:56px; z-index:20;
+    background: var(--sl-dark); color:#fff; display:flex; align-items:center; justify-content:space-between;
+    padding:0 20px; box-shadow:0 2px 8px rgba(0,0,0,.25);
+  }
+  #sl-header .brand { display:flex; align-items:center; gap:12px; font-size:15px; font-weight:600; letter-spacing:.3px; }
+  #sl-header .brand img { height:34px; width:auto; object-fit:contain; background:#fff; border-radius:4px; padding:2px 6px; }
+  #sl-header .brand .dot { width:10px; height:10px; border-radius:50%; background:var(--sl-accent); }
+  #sl-header .nav { display:flex; gap:18px; font-size:11px; align-items:center; }
+  #sl-header .nav a { color:#cfd8dc; text-decoration:none; }
+  #sl-header .nav a:hover { color:#fff; }
+  #gv-toggle { background:rgba(255,255,255,.15); color:#fff; border:1px solid rgba(255,255,255,.3); border-radius:4px; padding:4px 10px; cursor:pointer; font-size:12px; }
+  #gv-toggle:hover { background:rgba(255,255,255,.25); }
+  #gv.hidden { display:none; }
+
+  /* Panneau latéral façon fiche */
+  #gv {
+    position:absolute; top:72px; left:16px; width:320px; max-height:calc(100% - 140px); overflow:auto; z-index:10;
+    background:rgba(255,255,255,.97); color:var(--sl-text); border-radius:8px; padding:16px 18px;
+    box-shadow:0 4px 20px rgba(0,0,0,.18); border:1px solid var(--sl-border);
+  }
+  #gv h1 { font-size:20px; font-weight:600; margin:0 0 4px; color:var(--sl-dark); }
+  #gv .sub { font-size:11px; color:var(--sl-muted); margin:0 0 12px; }
+  #gv details { border-top:1px solid var(--sl-border); padding:8px 0; }
+  #gv summary { cursor:pointer; font-weight:600; font-size:11px; color:var(--sl-dark); }
+  #gv label.row { display:flex; gap:8px; align-items:center; padding:3px 0; font-size:10px; }
+  #gv label.row input[type=range] { width:70px; margin-left:auto; }
+  #gv .fly { display:flex; flex-wrap:wrap; gap:5px; margin:6px 0; }
+  #gv .fly button { font-size:11px; padding:2px 6px; line-height:1.2; }
+  #gv button, #gv select, #gv input[type=text] {
+    font:inherit; border:1px solid var(--sl-border); background:#fff; border-radius:4px; padding:4px 8px; max-width:100%;
+  }
+  #gv button { cursor:pointer; }
+  #gv button:hover { background:var(--sl-bg); }
+  #gv-caps { max-height:150px; overflow:auto; display:flex; flex-direction:column; gap:3px; margin-top:5px; }
+  #gv-caps button { text-align:left; font-size:11px; }
+  #gv-status { font-size:11px; color:var(--sl-muted); margin-top:6px; min-height:15px; }
+
+  /* Titre légende avec couleur footer */
+  #gv h1 {
+    background: var(--sl-footer);
+    margin: -16px -18px 12px -18px;
+    padding: 12px 18px;
+    border-radius: 8px 8px 0 0;
+  }
+
+  @media(max-width:600px){
+    #gv { width:calc(100% - 32px); right:16px; max-height:45%; }
+    #sl-header .nav { display:none; }
+  }
+</style>
+</head>
+<body>
+<div id="cesiumContainer"></div>
+
+<header id="sl-header">
+  <div class="brand"><img src="logo-agglo.png" alt="Saint-Lô Agglo" onerror="this.style.display='none'"><span class="dot"></span> Saint-Lô</div>
+  <nav class="nav">
+    <a href="#">Accueil</a>
+    <a href="#">Carte</a>
+    <a href="#">Contact</a>
+    <button id="gv-toggle" title="Afficher / masquer le panneau">☰</button>
+  </nav>
+</header>
+
+
+
+<script type="module">
+/* ========= Saint-Lô – thème site AGGLO ========= */
+const ION_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6InpCRTdtZllnVGwxTFNrb2giLCJqdGkiOiI4NjIzYmQ4OS01NDE5LTRhM2EtYmFkOS01ODgyYzA0MmE3NDAiLCJpZCI6NTE1NDgzLCJzdWIiOiJ0cmlzdGFuX3YiLCJpc3MiOiJodHRwczovL2FwaS5jZXNpdW0uY29tIiwiYXVkIjoic2FpbnQtbG8iLCJpYXQiOjE3OTE1MzIzNjB9._kIA_jDix-NLJ4tokqtcXQ_vXGJJsHmYdQytX1Y8Pho";
+
+const Cesium = window.Cesium;
+Cesium.Ion.defaultAccessToken = ION_TOKEN;
+document.getElementById("cesiumContainer").addEventListener("contextmenu", e => e.preventDefault());
+
+const viewer = new Cesium.Viewer("cesiumContainer", {
+  terrain: Cesium.Terrain.fromWorldTerrain({
+    requestVertexNormals: true,
+    requestWaterMask: true,
+  }),
+  timeline: false,
+  animation: false,
+});
+
+const osmBuildingsTileset = await Cesium.createOsmBuildingsAsync();
+viewer.scene.primitives.add(osmBuildingsTileset);
+
+// Toits en ardoise : faces vers le ciel en ardoise, façades OSM conservées.
+osmBuildingsTileset.customShader = new Cesium.CustomShader({
+  fragmentShaderText: `
+    void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {
+      vec3 up = normalize(fsInput.attributes.positionWC);
+      vec3 n = normalize(czm_inverseViewRotation * fsInput.attributes.normalEC);
+      float roof = smoothstep(0.55, 0.8, dot(n, up));
+      vec3 slate = vec3(0.23, 0.27, 0.31);
+      material.diffuse = mix(material.diffuse, slate, roof);
+    }`,
+});
+
+// Vue de départ : la Manche vue de loin, avant le zoom vers Saint-Lô
+viewer.scene.camera.setView({
+  destination: Cesium.Cartesian3.fromDegrees(-1.6, 48.9, 1500000),
+});
+
+/* ---------- Bâtiment OSM 153894040 : texture simplifiée façon photo ---------- */
+// Emprise au sol EXACTE du way OSM 153894040 (forme en L conservée),
+// dilatée de 4 % autour du centroïde : même forme, murs décollés de
+// l'original OSM (pas de surfaces coplanaires → pas de z-fighting),
+// triangulation earcut d'un polygone simple non auto-sécant.
+const B153894040_OSM = [
+  -1.0850430,49.1151950, -1.0849530,49.1151900, -1.0848963,49.1151919,
+  -1.0848000,49.1151950, -1.0847990,49.1152260, -1.0847980,49.1152530,
+  -1.0847980,49.1152780, -1.0847970,49.1153060, -1.0848730,49.1153060,
+  -1.0848740,49.1154550, -1.0847890,49.1154540, -1.0847900,49.1155260,
+  -1.0847890,49.1155470, -1.0848142,49.1155470, -1.0848870,49.1155470,
+  -1.0848890,49.1155250, -1.0848960,49.1154260, -1.0850240,49.1154270
+];
+const B153894040_LONLAT = (() => {
+  let clo = 0, cla = 0;
+  const n = B153894040_OSM.length / 2;
+  for (let i = 0; i < n; i++) { clo += B153894040_OSM[2 * i]; cla += B153894040_OSM[2 * i + 1]; }
+  clo /= n; cla /= n;
+  const k = 1.04, out = [];
+  for (let i = 0; i < n; i++) {
+    out.push(clo + (B153894040_OSM[2 * i] - clo) * k);
+    out.push(cla + (B153894040_OSM[2 * i + 1] - cla) * k);
+  }
+  return out;
+})();
+function makeFacadeTexture153894040(logo) {
+  const c = document.createElement("canvas");
+  c.width = 256; c.height = 256;
+  const g = c.getContext("2d");
+  // Fond beige (partie gauche de la photo)
+  g.fillStyle = "#d9c9a3"; g.fillRect(0, 0, 256, 256);
+  // Fenêtres : 4 colonnes x 9 rangées sur la partie beige
+  for (let r = 0; r < 9; r++) {
+    for (let col = 0; col < 4; col++) {
+      const x = 8 + col * 32, y = 8 + r * 26;
+      g.fillStyle = "#8a8378"; g.fillRect(x - 1, y - 1, 26, 18);
+      g.fillStyle = "#eef1f2"; g.fillRect(x, y, 24, 16);
+      g.fillStyle = "#9fb3bd"; g.fillRect(x + 11, y, 2, 16);
+    }
+  }
+  // Rez-de-chaussée vitré
+  g.fillStyle = "#c9c2b4"; g.fillRect(0, 240, 140, 16);
+  g.fillStyle = "#e8ecee";
+  for (let i = 0; i < 4; i++) g.fillRect(8 + i * 32, 242, 24, 12);
+  // Partie droite sombre à lames verticales (photo)
+  g.fillStyle = "#17171b"; g.fillRect(140, 0, 116, 256);
+  for (let x = 142; x < 256; x += 6) {
+    g.fillStyle = "#33333a"; g.fillRect(x, 0, 2, 256);
+  }
+  // Lignes d'étages discrètes côté sombre
+  g.fillStyle = "rgba(255,255,255,0.12)";
+  for (let r = 0; r < 9; r++) g.fillRect(140, 10 + r * 26, 116, 2);
+  // Grille basse
+  g.fillStyle = "#0c0c0e"; g.fillRect(140, 232, 116, 24);
+  // Logo Saint-Lô Agglo plaqué sur le bardage sombre (fond noir = raccord parfait)
+  if (logo) {
+    const bw = 108, bh = 118, bx = 144, by = 64;
+    const r = Math.min(bw / logo.width, bh / logo.height);
+    const w = logo.width * r, h = logo.height * r;
+    g.drawImage(logo, bx + (bw - w) / 2, by + (bh - h) / 2, w, h);
+  } else {
+    g.fillStyle = "#ffffff"; g.textAlign = "center";
+    g.font = "bold 20px Arial"; g.fillText("Saint-Lô", 198, 122);
+    g.font = "bold 26px Arial"; g.fillText("AGGLO", 198, 150);
+  }
+  return c;
+}
+function loadLogo153894040() {
+  const tries = ["logo-agglo.png", "logo-agglo.jpg", "logo-agglo.jpeg"];
+  const tryOne = (src) => new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = rej;
+    im.src = src;
+  });
+  return (async () => {
+    for (const s of tries) { try { return await tryOne(s); } catch (e) {} }
+    return null;
+  })();
+}
+try {
+  // Masquage d'origine désactivé : il enterrait le bâtiment avec le relief.
+  // On garde l'original OSM et on pose le volume texturé par-dessus (plus haut).
+  osmBuildingsTileset.style = undefined;
+} catch (e) { console.warn("style reset 153894040:", e); }
+{
+  const logo153894040 = await loadLogo153894040();
+  const tex = makeFacadeTexture153894040(logo153894040);
+  viewer.entities.add({
+    name: "Bâtiment 153894040 (texturé)",
+    description: "Way OSM 153894040 — bureaux 9 niveaux. Texture procédurale simplifiée : beige + fenêtres à gauche, bardage noir à lames à droite.",
+    polygon: {
+      hierarchy: Cesium.Cartesian3.fromDegreesArray(B153894040_LONLAT),
+      height: 0,
+      heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+      extrudedHeight: 29,
+      extrudedHeightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+      shadows: Cesium.ShadowMode.ENABLED,
+      material: new Cesium.ImageMaterialProperty({
+        image: tex,
+        repeat: new Cesium.Cartesian2(2, 1)
+      }),
+      outline: false
+    }
+  });
+  // Couvre le toit (évite la texture façade sur le toit)
+  viewer.entities.add({
+    name: "Bâtiment 153894040 (toit)",
+    polygon: {
+      hierarchy: Cesium.Cartesian3.fromDegreesArray(B153894040_LONLAT),
+      height: 29.1,
+      heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+      material: Cesium.Color.fromCssColorString("#3b454f"),
+      outline: false
+    }
+  });
+}
+
+/* ======================================================================
+   Saint-Lô – couches IGN / GPU / INPN
+   ====================================================================== */
+const GEO = "https://data.geopf.fr";
+const WMS_R = `${GEO}/wms-r/wms`;
+const WMS_V = `${GEO}/wms-v/ows`;
+const BBOX = [-1.14, 49.09, -1.04, 49.14];
+const ZONE = { U: "#d6453a", AUc: "#f08c2e", AU: "#f08c2e", A: "#e8d44d", N: "#4f9b5b" };
+const PLACES = {
+  "Centre-ville": [-1.094784,49.115191, 1800, -25],
+  "Cathédrale Notre-Dame": [-1.0941734, 49.1153797, 900, -35],
+  "Haras National": [-1.077022, 49.116755, 1200, -35],
+  "Gare": [-1.0999293,49.1168326, 1100, -30],
+  "Musée d'Art et d'Histoire": [-1.0880, 49.1169, 900, -35],
+  "Église Sainte-Croix": [-1.0850904, 49.1163479, 900, -35],
+  "Vallée de la Vire": [-1.1005, 49.1100, 1500, -30],
+  "office de tourisme" : [-1.0983495,49.1154237,200, -30],
+  "Bâtiment Saint-Lô Agglo" : [-1.0849431, 49.1153260, 350, -30],
+  "Commune entière": [-1.0833, 49.1167, 9000, -90],
+};
+
+/* ---------- Panneau latéral ---------- */
+const panel = document.createElement("div");
+panel.id = "gv";
+panel.innerHTML = `
+<h1>Saint-Lô</h1>
+<p class="sub">Manche, Normandie — Carte 3D interactive</p>
+<details open><summary>Aller à</summary><div class="fly" id="gv-fly"></div>
+ <label class="row"><input type="checkbox" id="gv-tilt" checked> Vue inclinée</label></details>
+<details open><summary>Fond de carte</summary><select id="gv-base"></select></details>
+<details open><summary>Bâtiments et relief</summary><div id="g-3d"></div></details>
+<details open><summary>Cadastre et IGN (WMS)</summary><div id="g-ign"></div></details>
+<details open><summary>Vecteurs 3D (WFS Géoplateforme)</summary><div id="g-wfs"></div></details>
+<details><summary>Environnement (ZNIEFF PatriNat)</summary><div id="g-inpn"></div></details>
+<details><summary>Explorer un service WMS</summary>
+ <select id="gv-svc">
+  <option value="${WMS_V}">Géoportail de l'Urbanisme / IGN vecteur</option>
+  <option value="${WMS_R}">IGN raster</option>
+  <option value="https://www.georisques.gouv.fr/services">Géorisques</option>
+  <option value="http://geoservices.brgm.fr/risques">BRGM risques</option>
+ </select>
+ <input type="text" id="gv-url" placeholder="ou une autre URL WMS" style="width:100%;margin-top:5px">
+ <button id="gv-load" style="margin-top:5px">Lister les couches</button>
+ <div id="gv-caps"></div><div id="g-custom"></div></details>
+<div id="gv-status"></div>`;
+document.body.appendChild(panel);
+panel.classList.add("hidden"); // panneau masqué à l'ouverture
+const $ = (s) => panel.querySelector(s);
+const status = (m) => ($("#gv-status").textContent = m);
+
+// Bouton masquer / afficher le panneau latéral
+const gvToggle = document.getElementById("gv-toggle");
+if (gvToggle) {
+  gvToggle.textContent = "☰ Afficher";
+  gvToggle.onclick = () => {
+    panel.classList.toggle("hidden");
+    gvToggle.textContent = panel.classList.contains("hidden") ? "☰" : "☰";
+  };
+}
+
+/* ---------- Fonds de carte ---------- */
+const wmts = (layer, fmt = "image/jpeg") =>
+  new Cesium.UrlTemplateImageryProvider({
+    url: `${GEO}/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${layer}&STYLE=normal&FORMAT=${fmt}&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}`,
+    maximumLevel: 19,
+    credit: "© IGN",
+  });
+const BASES = {
+  "Cesium (par défaut)": null,
+  "Orthophotographie IGN": () => wmts("ORTHOIMAGERY.ORTHOPHOTOS"),
+  "Plan IGN": () => wmts("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2", "image/png"),
+  "Carte topographique (OpenTopoMap)": () => new Cesium.UrlTemplateImageryProvider({
+    url: "https://tile.opentopomap.org/{z}/{x}/{y}.png",
+    maximumLevel: 17,
+    credit: "© OpenTopoMap, © OpenStreetMap contributors, SRTM",
+  }),
+  "OpenStreetMap": () => new Cesium.OpenStreetMapImageryProvider({ url: "https://tile.openstreetmap.org/" }),
+};
+const defaultBase = viewer.imageryLayers.get(0);
+if (defaultBase) defaultBase.show = false;
+// Une seule couche de fond active à la fois (évite l'empilement opaque)
+let activeBase = viewer.imageryLayers.addImageryProvider(BASES["Orthophotographie IGN"](), 0);
+activeBase.alpha = 1.0;
+
+const selectBase = (name) => {
+  if (activeBase) { viewer.imageryLayers.remove(activeBase, true); activeBase = null; }
+  const make = BASES[name];
+  if (defaultBase) defaultBase.show = !make;
+  if (make) activeBase = viewer.imageryLayers.addImageryProvider(make(), 0);
+};
+Object.keys(BASES).forEach((k) => $("#gv-base").add(new Option(k, k)));
+$("#gv-base").onchange = (e) => selectBase(e.target.value);
+$("#gv-base").value = "Orthophotographie IGN";
+
+/* ---------- Soleil + ombres des bâtiments ---------- */
+viewer.shadows = true;
+viewer.terrainShadows = Cesium.ShadowMode.RECEIVE_ONLY;
+viewer.scene.globe.enableLighting = true;
+function setSunHour(h) {
+  const d = new Date();
+  d.setHours(Math.floor(h), (h % 1) * 60, 0, 0);
+  viewer.clock.currentTime = Cesium.JulianDate.fromDate(d);
+}
+setSunHour(12);
+
+/* ---------- Bâtiments OSM, relief ---------- */
+function simpleToggle(box, label, on, fn) {
+  const row = document.createElement("label");
+  row.className = "row";
+  row.innerHTML = "<input type='checkbox'><span></span>";
+  row.children[1].textContent = label;
+  row.children[0].checked = on;
+  row.children[0].onchange = (e) => fn(e.target.checked);
+  $(box).appendChild(row);
+}
+simpleToggle("#g-3d", "Bâtiments OSM (Cesium)", true, (v) => (osmBuildingsTileset.show = v));
+simpleToggle("#g-3d", "Test de profondeur sur le relief", true, (v) => (viewer.scene.globe.depthTestAgainstTerrain = v));
+viewer.scene.globe.depthTestAgainstTerrain = true;
+simpleToggle("#g-3d", "Ombres solaires", true, (v) => { viewer.shadows = v; });
+{
+  const row = document.createElement("label");
+  row.className = "row";
+  row.innerHTML = "<span>Heure du soleil : <b>12h</b></span><input type='range' min='6' max='20' step='0.5' value='12'>";
+  $("#g-3d").appendChild(row);
+  const lbl = row.children[0].querySelector("b"), rg = row.children[1];
+  rg.oninput = () => {
+    const h = parseFloat(rg.value);
+    lbl.textContent = String(h).replace(".5", "h30") + (String(h).includes(".") ? "" : "h");
+    setSunHour(h);
+  };
+}
+
+/* ---------- Nuages ---------- */
+const clouds = viewer.scene.primitives.add(new Cesium.CloudCollection({ noiseDetail: 16 }));
+const cloudData = [];
+for (let i = 0; i < 14; i++) {
+  const lon = -1.14 + Math.random() * 0.10;
+  const lat = 49.09 + Math.random() * 0.05;
+  const alt = 1800 + Math.random() * 1000;
+  const size = 500 + Math.random() * 700;
+  const cloud = clouds.add({
+    position: Cesium.Cartesian3.fromDegrees(lon, lat, alt),
+    scale: new Cesium.Cartesian2(size * 1.6, size * 0.6),
+    maximumSize: new Cesium.Cartesian3(size / 6, size / 12, size / 14),
+    slice: 0.3 + Math.random() * 0.4,
+    brightness: 1.0,
+  });
+  cloudData.push({ cloud, lon, lat, alt });
+}
+viewer.scene.preRender.addEventListener(() => {
+  const dt = 0.0000012;
+  cloudData.forEach((c) => {
+    c.lon += dt;
+    if (c.lon > -1.03) c.lon = -1.14;
+    c.cloud.position = Cesium.Cartesian3.fromDegrees(c.lon, c.lat, c.alt);
+  });
+});
+simpleToggle("#g-3d", "Nuages", true, (v) => (clouds.show = v));
+
+/* ---------- Couches WMS ---------- */
+const wms = (url, layers) =>
+  new Cesium.WebMapServiceImageryProvider({
+    url,
+    layers,
+    rectangle: Cesium.Rectangle.fromDegrees(...BBOX),
+    maximumLevel: 19,
+    parameters: { transparent: true, format: "image/png" },
+  });
+const img = (p) => () => viewer.imageryLayers.addImageryProvider(p());
+
+function toggle(box, label, make, on, alpha = 1) {
+  const row = document.createElement("label");
+  row.className = "row";
+  row.innerHTML = `<input type="checkbox"><span></span><input type="range" min="0.1" max="1" step="0.05" value="${alpha}">`;
+  row.children[1].textContent = label;
+  const [cb, , rg] = row.children;
+  let layer;
+  cb.onchange = () => {
+    if (cb.checked) {
+      try { layer = make(); layer.alpha = +rg.value; status(label + " ajouté"); }
+      catch (e) { cb.checked = false; status("Échec : " + label); }
+    } else if (layer) { viewer.imageryLayers.remove(layer, true); layer = null; }
+  };
+  rg.oninput = () => { if (layer) layer.alpha = +rg.value; };
+  $(box).appendChild(row);
+  if (on) { cb.checked = true; cb.onchange(); }
+}
+toggle("#g-ign", "Parcelles cadastrales (Parcellaire Express)", img(() => wms(WMS_R, "CADASTRALPARCELS.PARCELLAIRE_EXPRESS")), true);
+toggle("#g-ign", "Parcellaire PCI vecteur", img(() => wms(WMS_V, "CADASTRALPARCELS.PCI_VECTEUR")));
+toggle("#g-ign", "Limites administratives", img(() => wms(WMS_R, "LIMITES_ADMINISTRATIVES_EXPRESS.LATEST")), true);
+toggle("#g-ign", "Cours d'eau BCAE", img(() => wms(WMS_R, "HYDROGRAPHY.BCAE.LATEST")));
+toggle("#g-ign", "Forêts publiques", img(() => wms(WMS_R, "FORETS.PUBLIQUES")));
+toggle("#g-ign", "Réseau routier", img(() => wmts("TRANSPORTNETWORKS.ROADS", "image/png")));
+
+/* ---------- WFS en vecteur ---------- */
+function viewBox() {
+  const c = viewer.scene.canvas;
+  const p = viewer.camera.pickEllipsoid(new Cesium.Cartesian2(c.clientWidth / 2, c.clientHeight / 2), viewer.scene.globe.ellipsoid);
+  let lon = -1.09031, lat = 49.11624;
+  if (p) { const g = Cesium.Cartographic.fromCartesian(p); lon = Cesium.Math.toDegrees(g.longitude); lat = Cesium.Math.toDegrees(g.latitude); }
+  return [lon - 0.015, lat - 0.01, lon + 0.015, lat + 0.01];
+}
+const wfsUrl = (type, b, latLon, n = 4000) =>
+  `${GEO}/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=${encodeURIComponent(type)}` +
+  `&OUTPUTFORMAT=${encodeURIComponent("application/json")}&SRSNAME=EPSG:4326&COUNT=${n}` +
+  `&BBOX=${latLon ? [b[1], b[0], b[3], b[2]] : b},EPSG:4326`;
+const dropZ = (c) => (typeof c[0] === "number" ? c.slice(0, 2) : c.map(dropZ));
+
+async function fetchWfs(type) {
+  const b = viewBox();
+  let last = "";
+  for (const latLon of [true, false]) {
+    const url = wfsUrl(type, b, latLon);
+    try {
+      const r = await fetch(url);
+      const t = await r.text();
+      if (!r.ok) { last = `HTTP ${r.status} ${t.slice(0, 120).replace(/\s+/g, " ")}`; continue; }
+      let j;
+      try { j = JSON.parse(t); } catch (e) { last = "Réponse non JSON : " + t.slice(0, 140).replace(/\s+/g, " "); continue; }
+      if (j.features && j.features.length) {
+        j.features.forEach((f) => { if (f.geometry) f.geometry.coordinates = dropZ(f.geometry.coordinates); });
+        console.log("WFS OK", type, j.features.length, url);
+        return j;
+      }
+      last = "0 objet dans l'emprise";
+    } catch (e) { last = "Réseau/CORS : " + e.message; }
+    console.warn("WFS échec", type, last, url);
+  }
+  throw new Error(last);
+}
+const pv = (e, k) => {
+  const v = e.properties && e.properties[k];
+  return v && v.getValue ? v.getValue() : v;
+};
+const col = (c, a) => Cesium.Color.fromCssColorString(c).withAlpha(a);
+const vectors = [];
+
+function vector(label, type, apply, on, box) {
+  const row = document.createElement("label");
+  row.className = "row";
+  row.innerHTML = "<input type='checkbox'><span></span>";
+  row.children[1].textContent = label;
+  const cb = row.children[0];
+  let ds;
+  const clear = () => { if (ds) { viewer.dataSources.remove(ds, true); ds = null; } };
+  const load = async () => {
+    clear();
+    status("Chargement : " + label + "…");
+    try {
+      const json = await fetchWfs(type);
+      ds = await Cesium.GeoJsonDataSource.load(json, {
+        clampToGround: true,
+        stroke: Cesium.Color.WHITE,
+        fill: Cesium.Color.TRANSPARENT,
+      });
+      ds.entities.values.forEach((e) => e.polygon && apply(e));
+      await viewer.dataSources.add(ds);
+      status(`${label} : ${ds.entities.values.length} objets`);
+    } catch (err) { status(`${label} : ${err.message}`); }
+  };
+  cb.onchange = () => (cb.checked ? load() : clear());
+  vectors.push(() => { if (cb.checked) load(); });
+  $(box || "#g-wfs").appendChild(row);
+  if (on) { cb.checked = true; load(); }
+}
+const ground = (e, material) => {
+  e.polygon.material = material;
+  e.polygon.outline = true;
+  e.polygon.outlineColor = Cesium.Color.WHITE.withAlpha(0.8);
+};
+vector("Bâtiments BD TOPO (3D)", "BDTOPO_V3:batiment", (e) => {
+  const h = Number(pv(e, "hauteur")) || 6;
+  e.polygon.classificationType = undefined;
+  Object.assign(e.polygon, {
+    height: 0,
+    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+    extrudedHeight: h,
+    extrudedHeightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+    material: col(h > 15 ? "#d9d4c8" : "#efe9dd", 0.95),
+    outline: false,
+  });
+});
+vector("Zonage PLU (Géoportail de l'Urbanisme)", "wfs_du:zone_urba", (e) =>
+  ground(e, col(ZONE[String(pv(e, "typezone") || "N")] || "#999999", 0.45)));
+vector("Prescriptions surfaciques (PLU)", "wfs_du:prescription_surf", (e) =>
+  ground(e, col("#7a3fb0", 0.35)));
+vector("Parcelles cadastrales (cliquables)", "CADASTRALPARCELS.PARCELLAIRE_EXPRESS:parcelle", (e) =>
+  ground(e, col("#ffd54a", 0.12)));
+vector("ZNIEFF type I (PatriNat)", "patrinat_znieff1:znieff1", (e) =>
+  ground(e, col("#2e7d32", 0.45)), false, "#g-inpn");
+vector("ZNIEFF type II (PatriNat)", "patrinat_znieff2:znieff2", (e) =>
+  ground(e, col("#66bb6a", 0.45)), false, "#g-inpn");
+const rl = document.createElement("button");
+rl.textContent = "Recharger sur la vue actuelle";
+rl.style.marginTop = "5px";
+rl.onclick = () => vectors.forEach((f) => f());
+$("#g-wfs").appendChild(rl);
+
+/* ---------- Explorateur WMS ---------- */
+$("#gv-load").onclick = async () => {
+  const base = ($("#gv-url").value.trim() || $("#gv-svc").value).split("?")[0];
+  const box = $("#gv-caps");
+  box.textContent = "Chargement…";
+  try {
+    const r = await fetch(`${base}?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetCapabilities`);
+    const xml = new DOMParser().parseFromString(await r.text(), "text/xml");
+    const layers = [...xml.getElementsByTagName("Layer")]
+      .map((l) => {
+        const n = [...l.children].find((c) => c.localName === "Name");
+        const t = [...l.children].find((c) => c.localName === "Title");
+        return n && { name: n.textContent, title: t ? t.textContent : n.textContent };
+      })
+      .filter(Boolean);
+    box.innerHTML = layers.length ? "" : "Aucune couche trouvée (service ou CORS ?)";
+    layers.slice(0, 300).forEach((l) => {
+      const b = document.createElement("button");
+      b.textContent = l.title;
+      b.title = l.name;
+      b.onclick = () => toggle("#g-custom", l.title, img(() => wms(base, l.name)), true, 0.8);
+      box.appendChild(b);
+    });
+  } catch (e) { box.textContent = "Impossible de lire le service (réseau ou CORS)."; }
+};
+
+/* ---------- Navigation ---------- */
+function fly(k) {
+  const [lon, lat, range, pitch] = PLACES[k];
+  const tilt = $("#gv-tilt").checked ? pitch : -90;
+  viewer.camera.flyToBoundingSphere(
+    new Cesium.BoundingSphere(Cesium.Cartesian3.fromDegrees(lon, lat, 20), 1),
+    {
+      duration: 2.2,
+      complete: () => vectors.forEach((f) => f()),
+      offset: new Cesium.HeadingPitchRange(
+        Cesium.Math.toRadians(k === "Commune entière" ? 0 : 340),
+        Cesium.Math.toRadians(tilt),
+        range
+      ),
+    }
+  );
+}
+Object.keys(PLACES).forEach((k) => {
+  const b = document.createElement("button");
+  b.textContent = k;
+  b.onclick = () => fly(k);
+  $("#gv-fly").appendChild(b);
+});
+
+/* ---------- Zoom d'ouverture ---------- */
+function rangeForScale(scale) {
+  const mPerPx = scale * 0.000264583;
+  const fov = viewer.camera.frustum.fov;
+  const widthPx = viewer.scene.canvas.clientWidth;
+  return (mPerPx * widthPx) / (2 * Math.tan(fov / 2));
+}
+
+viewer.camera.flyToBoundingSphere(
+  new Cesium.BoundingSphere(Cesium.Cartesian3.fromDegrees(-1.0849323, 49.1153014, 20), 1),
+  
+  {
+    duration: 10,
+    easingFunction: Cesium.EasingFunction.QUARTIC_OUT,
+    offset: new Cesium.HeadingPitchRange(
+      Cesium.Math.toRadians(340),
+      Cesium.Math.toRadians(-45),
+      rangeForScale(6000)
+    ),
+    complete: () => vectors.forEach((f) => f()),
+  }
+);
+
+</script>
+</body>
+</html>
